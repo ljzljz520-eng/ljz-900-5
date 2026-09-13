@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>系统管理 - 酒店客房质检整改系统</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="tabs" id="tabs"></div>
+
+  <!-- ===== 员工 ===== -->
+  <div id="tab-employees">
+    <div class="card">
+      <div class="flex-between mb16">
+        <h2 style="margin:0"><span class="icon">👥</span><span id="empTitle">员工列表</span></h2>
+        <button class="btn btn-primary btn-sm" id="btnAddEmp" onclick="openEmpModal()">＋ 新增员工</button>
+      </div>
+      <div class="filter-bar" id="empRoleFilter"></div>
+      <div class="table-wrap"><table id="empTable"></table></div>
+    </div>
+  </div>
+
+  <!-- ===== 房间(仅管理员) ===== -->
+  <div id="tab-rooms" style="display:none">
+    <div class="card">
+      <h2><span class="icon">➕</span>添加房间</h2>
+      <div class="form-inline">
+        <input type="text" id="roomNo" placeholder="房号,如 301">
+        <input type="text" id="roomFloor" placeholder="楼层,如 3F">
+        <button class="btn btn-primary" style="flex:0 0 auto" onclick="addRoom()">添加</button>
+      </div>
+      <div class="section-title">批量生成</div>
+      <div class="form-inline">
+        <input type="number" id="bFloor" placeholder="楼层,如 3" min="1">
+        <input type="number" id="bFrom" placeholder="起始号,如 1" min="0">
+        <input type="number" id="bTo" placeholder="结束号,如 20" min="0">
+        <button class="btn btn-accent" style="flex:0 0 auto" onclick="batchRooms()">批量生成</button>
+      </div>
+      <div class="text-muted mt8">示例:楼层 3、起止 1~8 → 生成 301~308(已存在的自动跳过)</div>
+    </div>
+    <div class="card">
+      <h2><span class="icon">🚪</span>房间列表</h2>
+      <div class="table-wrap"><table id="roomTable"></table></div>
+    </div>
+  </div>
+
+  <!-- ===== 二维码 ===== -->
+  <div id="tab-tokens" style="display:none">
+    <div class="card">
+      <h2><span class="icon">🔳</span>生成整改二维码</h2>
+      <div class="form-inline">
+        <select id="tkRoom"></select>
+        <input type="number" id="tkHours" placeholder="有效期(小时),留空=永久" min="0">
+        <button class="btn btn-primary" style="flex:0 0 auto" onclick="genToken()">生成二维码</button>
+        <button class="btn btn-ghost" style="flex:0 0 auto" onclick="openBatchModal()">批量生成</button>
+      </div>
+      <div class="text-muted mt8">扫码进入免登录整改页;停用或删除后该码立即失效。</div>
+    </div>
+    <div class="card">
+      <div class="flex-between mb8">
+        <h2 style="margin:0"><span class="icon">📋</span>二维码列表</h2>
+        <button class="btn btn-ghost btn-sm" onclick="safe(loadTokens)">🔄 刷新</button>
+      </div>
+      <div class="table-wrap"><table id="tokenTable"></table></div>
+    </div>
+  </div>
+</div>
+
+<!-- 员工编辑弹窗 -->
+<div class="modal-mask" id="empModal">
+  <div class="modal">
+    <h3 id="empModalTitle">新增员工</h3>
+    <div class="form-row"><label>姓名</label><input type="text" id="empName" placeholder="员工姓名"></div>
+    <div class="form-row"><label>角色</label>
+      <select id="empRole">
+        <option value="inspector">质检员</option>
+        <option value="supervisor">客房主管</option>
+        <option value="manager">店长</option>
+        <option value="admin">管理员</option>
+      </select>
+    </div>
+    <div class="form-row"><label>手机号(登录账号)</label><input type="tel" id="empPhone" maxlength="11" placeholder="11位手机号"></div>
+    <div class="form-row"><label>密码</label><input type="text" id="empPwd"></div>
+    <div class="flex" style="justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="closeModal('empModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveEmp()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 二维码结果弹窗 -->
+<div class="modal-mask" id="qrModal">
+  <div class="modal">
+    <h3>整改二维码</h3>
+    <div id="qrList"></div>
+    <button class="btn btn-ghost btn-block" onclick="closeModal('qrModal')">关闭</button>
+  </div>
+</div>
+
+<!-- 批量生成弹窗 -->
+<div class="modal-mask" id="batchModal">
+  <div class="modal">
+    <h3>批量生成二维码</h3>
+    <div class="form-row"><label>有效期(小时),留空为永久</label><input type="number" id="batchHours" min="0"></div>
+    <div class="form-row">
+      <label>选择房间(<a href="javascript:;" onclick="batchSelectAll(true)">全选</a> / <a href="javascript:;" onclick="batchSelectAll(false)">清空</a>)</label>
+      <div id="batchRooms" style="max-height:260px;overflow-y:auto;border:1.5px solid var(--border);border-radius:9px;padding:10px"></div>
+    </div>
+    <div class="flex" style="justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="closeModal('batchModal')">取消</button>
+      <button class="btn btn-primary" onclick="genBatch()">生成</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/common.js"></script>
+<script>
+const user = guard('manager', 'admin');
+renderNav('/admin.html');
+initLightbox();
+const isAdmin = user.role === 'admin';
+
+/* ================= 标签页(锚点路由) ================= */
+const TABS = isAdmin
+  ? [['employees', '👥 员工管理'], ['rooms', '🚪 房间管理'], ['tokens', '🔳 二维码管理']]
+  : [['employees', '👥 员工列表'], ['tokens', '🔳 二维码管理']];
+
+document.getElementById('tabs').innerHTML = TABS.map(([n, l]) => `<button data-tab="${n}">${l}</button>`).join('');
+document.getElementById('tabs').addEventListener('click', e => {
+  if (e.target.dataset.tab) switchTab(e.target.dataset.tab);
+});
+window.addEventListener('hashchange', () => switchTab(location.hash.slice(1), false));
+
+function switchTab(name, updateHash = true) {
+  if (!TABS.some(t => t[0] === name)) name = TABS[0][0];
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  TABS.forEach(([n]) => document.getElementById('tab-' + n).style.display = n === name ? '' : 'none');
+  if (updateHash) history.replaceState(null, '', '#' + name);
+  if (name === 'employees') safe(loadEmployees);
+  if (name === 'rooms') safe(fetchRooms);
+  if (name === 'tokens') { safe(fetchRooms); safe(loadTokens); }
+}
+
+function safe(fn) { return Promise.resolve().then(fn).catch(e => toast(e.message, 'error')); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+document.querySelectorAll('.modal-mask').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.remove('show'); }));
+
+/* ================= 员工 ================= */
+let empRoleFilter = '', empMap = {};
+const ROLE_OPTS = [['', '全部'], ['inspector', '质检员'], ['supervisor', '客房主管'], ['manager', '店长'], ['admin', '管理员']];
+
+if (!isAdmin) document.getElementById('btnAddEmp').style.display = 'none';
+document.getElementById('empTitle').textContent = isAdmin ? '员工管理' : '员工列表';
+
+function renderEmpFilter() {
+  document.getElementById('empRoleFilter').innerHTML = ROLE_OPTS.map(([v, l]) =>
+    `<button class="chip ${empRoleFilter === v ? 'active' : ''}" data-r="${v}">${l}</button>`).join('');
+}
+document.getElementById('empRoleFilter').addEventListener('click', e => {
+  if (e.target.dataset.r === undefined) return;
+  empRoleFilter = e.target.dataset.r;
+  renderEmpFilter();
+  safe(loadEmployees);
+});
+
+async function loadEmployees() {
+  const d = await API.get('/api/employees' + (empRoleFilter ? `?role=${empRoleFilter}` : ''));
+  empMap = {};
+  d.employees.forEach(e => empMap[e.id] = e);
+  const tb = document.getElementById('empTable');
+  if (!d.employees.length) { tb.innerHTML = '<tr><td><div class="empty-state"><div class="big">👤</div>暂无员工</div></td></tr>'; return; }
+  tb.innerHTML = `<tr><th>姓名</th><th>角色</th><th>手机号</th><th>状态</th><th>上报问题</th><th>创建时间</th>${isAdmin ? '<th>操作</th>' : ''}</tr>` +
+    d.employees.map(e => `<tr>
+      <td><b>${esc(e.name)}</b></td>
+      <td><span class="badge badge-role">${esc(e.role_name)}</span></td>
+      <td>${esc(e.phone)}</td>
+      <td>${e.active ? '<span class="badge badge-active">在职</span>' : '<span class="badge badge-disabled">已停用</span>'}</td>
+      <td>${e.issue_count}</td>
+      <td class="text-muted">${fmtTime(e.created_at)}</td>
+      ${isAdmin ? `<td style="white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" onclick="openEmpModal(${e.id})">编辑</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleEmp(${e.id})">${e.active ? '停用' : '启用'}</button>
+        <button class="btn btn-danger btn-sm" onclick="delEmp(${e.id})">删除</button>
+      </td>` : ''}
+    </tr>`).join('');
+}
+
+let editingEmpId = null;
+function openEmpModal(id) {
+  editingEmpId = id || null;
+  const e = id ? empMap[id] : null;
+  document.getElementById('empModalTitle').textContent = e ? '编辑员工' : '新增员工';
+  document.getElementById('empName').value = e ? e.name : '';
+  document.getElementById('empRole').value = e ? e.role : 'inspector';
+  document.getElementById('empPhone').value = e ? e.phone : '';
+  const pwd = document.getElementById('empPwd');
+  pwd.value = '';
+  pwd.placeholder = e ? '留空则不修改密码' : '留空默认 123456';
+  document.getElementById('empModal').classList.add('show');
+}
+
+async function saveEmp() {
+  const name = document.getElementById('empName').value.trim();
+  const role = document.getElementById('empRole').value;
+  const phone = document.getElementById('empPhone').value.trim();
+  const password = document.getElementById('empPwd').value;
+  if (!name || !phone) return toast('请填写姓名和手机号', 'error');
+  try {
+    if (editingEmpId) {
+      const body = { name, role, phone };
+      if (password) body.password = password;
+      await API.put('/api/employees/' + editingEmpId, body);
+    } else {
+      await API.post('/api/employees', { name, role, phone, password: password || undefined });
+    }
+    toast('✅ 已保存', 'success');
+    closeModal('empModal');
+    loadEmployees();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function toggleEmp(id) {
+  const e = empMap[id];
+  try {
+    await API.put('/api/employees/' + id, { active: e.active ? 0 : 1 });
+    toast(e.active ? '已停用并踢下线' : '已启用', 'success');
+    loadEmployees();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function delEmp(id) {
+  const e = empMap[id];
+  if (!confirm(`确定删除员工「${e.name}」吗?`)) return;
+  try {
+    await API.del('/api/employees/' + id);
+    toast('已删除', 'success');
+    loadEmployees();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+/* ================= 房间 ================= */
+let roomsCache = [];
+
+async function fetchRooms() {
+  const d = await API.get('/api/rooms');
+  roomsCache = d.rooms;
+  document.getElementById('tkRoom').innerHTML = d.rooms.length
+    ? d.rooms.map(r => `<option value="${r.id}">${esc(r.room_number)} (${esc(r.floor) || '未分层'})</option>`).join('')
+    : '<option value="">暂无房间,请先添加</option>';
+  renderRoomTable();
+}
+
+function renderRoomTable() {
+  const tb = document.getElementById('roomTable');
+  if (!roomsCache.length) { tb.innerHTML = '<tr><td><div class="empty-state"><div class="big">🚪</div>暂无房间,请先添加</div></td></tr>'; return; }
+  tb.innerHTML = '<tr><th>房号</th><th>楼层</th><th>问题数</th><th>待整改</th><th>创建时间</th><th>操作</th></tr>' +
+    roomsCache.map(r => `<tr>
+      <td><b>${esc(r.room_number)}</b></td>
+      <td>${esc(r.floor) || '-'}</td>
+      <td>${r.issue_count}</td>
+      <td>${r.pending_count ? `<span class="badge badge-pending">${r.pending_count}</span>` : '0'}</td>
+      <td class="text-muted">${fmtTime(r.created_at)}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="delRoom(${r.id})">删除</button></td>
+    </tr>`).join('');
+}
+
+async function addRoom() {
+  const room_number = document.getElementById('roomNo').value.trim();
+  const floor = document.getElementById('roomFloor').value.trim();
+  if (!room_number) return toast('请填写房号', 'error');
+  try {
+    await API.post('/api/rooms', { room_number, floor });
+    toast('✅ 已添加', 'success');
+    document.getElementById('roomNo').value = '';
+    fetchRooms();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function batchRooms() {
+  const floor = document.getElementById('bFloor').value;
+  const from = document.getElementById('bFrom').value;
+  const to = document.getElementById('bTo').value;
+  try {
+    const d = await API.post('/api/rooms/batch', { floor, from, to });
+    toast(`✅ 新建 ${d.created.length} 间${d.skipped.length ? `,跳过已存在 ${d.skipped.length} 间` : ''}`, 'success');
+    fetchRooms();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function delRoom(id) {
+  const r = roomsCache.find(x => x.id === id);
+  if (!confirm(`确定删除房间 ${r.room_number} 吗?\n该房间的所有问题记录和照片将一并删除!`)) return;
+  try {
+    await API.del('/api/rooms/' + id);
+    toast('已删除', 'success');
+    fetchRooms();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+/* ================= 二维码 ================= */
+let tokenMap = {};
+const TOKEN_STATUS = {
+  active: ['badge-active', '有效'],
+  disabled: ['badge-disabled', '已停用'],
+  expired: ['badge-expired', '已过期'],
+};
+
+async function loadTokens() {
+  const d = await API.get('/api/tokens');
+  tokenMap = {};
+  d.tokens.forEach(t => tokenMap[t.id] = t);
+  const tb = document.getElementById('tokenTable');
+  if (!d.tokens.length) { tb.innerHTML = '<tr><td><div class="empty-state"><div class="big">🔳</div>暂无二维码,请先生成</div></td></tr>'; return; }
+  tb.innerHTML = '<tr><th>房间</th><th>状态</th><th>待整改</th><th>有效期至</th><th>创建人</th><th>创建时间</th><th>操作</th></tr>' +
+    d.tokens.map(t => {
+      const [cls, label] = TOKEN_STATUS[t.status] || TOKEN_STATUS.active;
+      return `<tr>
+      <td><b>${esc(t.room_number)}</b></td>
+      <td><span class="badge ${cls}">${label}</span></td>
+      <td>${t.pending_count ? `<span class="badge badge-pending">${t.pending_count}</span>` : '0'}</td>
+      <td class="text-muted">${t.expires_at ? fmtTime(t.expires_at) : '永久'}</td>
+      <td>${esc(t.created_by_name)}</td>
+      <td class="text-muted">${fmtTime(t.created_at)}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-primary btn-sm" onclick="showQr(${t.id})">二维码</button>
+        ${t.disabled
+          ? `<button class="btn btn-ghost btn-sm" onclick="toggleToken(${t.id}, true)">启用</button>`
+          : `<button class="btn btn-ghost btn-sm" onclick="toggleToken(${t.id}, false)">停用</button>`}
+        <button class="btn btn-danger btn-sm" onclick="delToken(${t.id})">删除</button>
+      </td>
+    </tr>`;
+    }).join('');
+}
+
+async function genToken() {
+  const room_id = Number(document.getElementById('tkRoom').value);
+  const expires_hours = document.getElementById('tkHours').value;
+  if (!room_id) return toast('请先选择房间(无房间请先到房间管理添加)', 'error');
+  try {
+    const t = await API.post('/api/tokens', { room_id, expires_hours: expires_hours || undefined });
+    showQrList([t]);
+    loadTokens();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function openBatchModal() {
+  if (!roomsCache.length) return toast('暂无房间,请先添加', 'error');
+  document.getElementById('batchRooms').innerHTML = roomsCache.map(r =>
+    `<label style="display:inline-flex;align-items:center;gap:4px;margin:4px 12px 4px 0;font-size:14px;cursor:pointer">
+      <input type="checkbox" value="${r.id}"> ${esc(r.room_number)}
+    </label>`).join('');
+  document.getElementById('batchModal').classList.add('show');
+}
+
+function batchSelectAll(on) {
+  document.querySelectorAll('#batchRooms input[type=checkbox]').forEach(c => c.checked = on);
+}
+
+async function genBatch() {
+  const room_ids = [...document.querySelectorAll('#batchRooms input:checked')].map(c => Number(c.value));
+  if (!room_ids.length) return toast('请选择房间', 'error');
+  const expires_hours = document.getElementById('batchHours').value;
+  try {
+    const d = await API.post('/api/tokens/batch', { room_ids, expires_hours: expires_hours || undefined });
+    closeModal('batchModal');
+    showQrList(d.tokens);
+    loadTokens();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function showQr(id) {
+  try {
+    const d = await API.get(`/api/tokens/${id}/qr`);
+    showQrList([d]);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function showQrList(list) {
+  document.getElementById('qrList').innerHTML = list.map(t => `
+    <div class="mb16" style="text-align:center">
+      <div style="font-weight:700;margin-bottom:6px">🚪 房间 ${esc(t.room_number)}</div>
+      <img class="qr-img" src="${t.qr}" style="max-width:240px;margin:0 auto" alt="二维码">
+      <div class="url-box">${esc(t.url)}</div>
+    </div>`).join('');
+  document.getElementById('qrModal').classList.add('show');
+}
+
+async function toggleToken(id, enable) {
+  try {
+    await API.post(`/api/tokens/${id}/${enable ? 'enable' : 'disable'}`);
+    toast(enable ? '已启用' : '已停用', 'success');
+    loadTokens();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function delToken(id) {
+  const t = tokenMap[id];
+  if (!confirm(`确定删除房间 ${t.room_number} 的这个二维码吗?删除后该码立即失效。`)) return;
+  try {
+    await API.del('/api/tokens/' + id);
+    toast('已删除', 'success');
+    loadTokens();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+/* ================= 初始化 ================= */
+renderEmpFilter();
+switchTab(location.hash.slice(1), false);
+</script>
+</body>
+</html>

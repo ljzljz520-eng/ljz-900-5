@@ -136,6 +136,15 @@ router.get('/tokens', requireAuth('manager', 'admin'), (req, res) => {
   });
 });
 
+// 查看单个 token 的二维码(列表中"二维码"按钮)
+router.get('/tokens/:id/qr', requireAuth('manager', 'admin'), async (req, res) => {
+  const t = db.get('SELECT t.*, r.room_number FROM tokens t JOIN rooms r ON r.id = t.room_id WHERE t.id = ?', [req.params.id]);
+  if (!t) return res.status(404).json({ error: '二维码不存在' });
+  const url = tokenUrl(req, t.token);
+  const qr = await QRCode.toDataURL(url, { width: 320, margin: 1 });
+  res.json({ id: t.id, url, qr, room_number: t.room_number });
+});
+
 async function createToken(req, roomId, expiresHours) {
   const token = crypto.randomBytes(16).toString('hex');
   let expiresAt = null;

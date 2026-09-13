@@ -2,6 +2,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const db = require('./db');
 
 const app = express();
@@ -30,6 +31,13 @@ app.use((err, _req, res, _next) => {
 
 const PORT = process.env.PORT || 3000;
 db.init().then(() => {
+  // 首次启动:创建默认管理员账号
+  if (!db.get('SELECT id FROM employees LIMIT 1')) {
+    const hash = p => crypto.createHash('sha256').update(String(p)).digest('hex');
+    db.run('INSERT INTO employees(name,role,phone,password) VALUES (?,?,?,?)',
+      ['系统管理员', 'admin', '13800000001', hash('123456')]);
+    console.log('   已初始化默认管理员账号: 13800000001 / 123456');
+  }
   fs.mkdirSync(path.join(__dirname, 'uploads'), { recursive: true });
   app.listen(PORT, () => {
     console.log(`✅ 酒店客房质检整改系统已启动: http://localhost:${PORT}`);
