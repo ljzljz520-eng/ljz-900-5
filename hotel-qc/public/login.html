@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 - 酒店客房质检整改系统</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="logo">🏨</div>
+    <h1>客房质检整改系统</h1>
+    <div class="sub">质检上报 · 扫码整改 · 完成率统计</div>
+    <div class="form-row">
+      <label>手机号</label>
+      <input type="tel" id="phone" placeholder="请输入手机号" maxlength="11" autocomplete="username">
+    </div>
+    <div class="form-row">
+      <label>密码</label>
+      <input type="password" id="password" placeholder="请输入密码" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary btn-block btn-lg" id="loginBtn" onclick="doLogin()">登 录</button>
+    <div class="demo-accounts">
+      <b>演示账号</b>(密码均为 123456)<br>
+      管理员 13800000001 · 店长 13800000002<br>
+      质检员 13800000003 · 客房主管 13800000004
+    </div>
+  </div>
+</div>
+<script src="/js/common.js"></script>
+<script>
+if (API.user && API.token) location.href = ROLE_HOME[API.user.role] || '/login.html';
+async function doLogin() {
+  const phone = document.getElementById('phone').value.trim();
+  const password = document.getElementById('password').value;
+  if (!phone || !password) return toast('请输入手机号和密码', 'error');
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true; btn.textContent = '登录中...';
+  try {
+    const data = await API.post('/api/auth/login', { phone, password });
+    API.setSession(data.token, data.employee);
+    location.href = ROLE_HOME[data.employee.role] || '/login.html';
+  } catch (e) {
+    toast(e.message, 'error');
+    btn.disabled = false; btn.textContent = '登 录';
+  }
+}
+document.getElementById('password').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+</script>
+</body>
+</html>

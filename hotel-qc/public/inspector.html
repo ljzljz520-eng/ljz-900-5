@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>质检上报 - 酒店客房质检整改系统</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="container-narrow">
+  <div class="card">
+    <h2><span class="icon">📸</span>批量上传质检问题</h2>
+    <div class="form-row">
+      <label>选择房间</label>
+      <select id="roomSelect"><option value="">加载中...</option></select>
+    </div>
+    <div id="entries"></div>
+    <button class="btn btn-ghost btn-block" onclick="addEntry()">＋ 添加问题项</button>
+    <div class="mt16">
+      <button class="btn btn-primary btn-block btn-lg" id="submitBtn" onclick="submitBatch()">提交上传</button>
+    </div>
+    <div class="text-muted mt8" id="hint">每条问题需上传 1 张照片,可一次提交多条</div>
+  </div>
+
+  <div class="section-title">🗂️ 我的上报记录</div>
+  <div class="filter-bar" id="mineFilter">
+    <button class="chip active" data-s="">全部</button>
+    <button class="chip" data-s="pending">待整改</button>
+    <button class="chip" data-s="rectified">已整改</button>
+  </div>
+  <div id="myIssues"></div>
+</div>
+<script src="/js/common.js"></script>
+<script>
+const user = guard('inspector', 'admin', 'manager');
+renderNav('/inspector.html');
+initLightbox();
+let rooms = [];
+let mineStatus = '';
+
+async function loadRooms() {
+  const data = await API.get('/api/rooms');
+  rooms = data.rooms;
+  const floors = [...new Set(rooms.map(r => r.floor))];
+  document.getElementById('roomSelect').innerHTML =
+    '<option value="">请选择房间</option>' +
+    floors.map(f => `<optgroup label="${esc(f)}">${rooms.filter(r => r.floor === f)
+      .map(r => `<option value="${r.id}">${esc(r.room_number)}${r.pending_count ? ` (待整改${r.pending_count})` : ''}</option>`).join('')}</optgroup>').join('');
+}
+
+function addEntry() {
+  const idx = document.querySelectorAll('.entry').length;
+  const div = document.createElement('div');
+  div.className = 'entry';
+  div.innerHTML = `
+    <span class="entry-no">问题 ${idx + 1}</span>
+    <button class="entry-del" title="删除" onclick="this.parentElement.remove();renumber()">✕</button>
+    <div class="photo-picker">
+      <input type="file" accept="image/*" capture="environment" onchange="previewPhoto(this)">
+      <div class="placeholder"><span class="cam">📷</span>点击拍摄/选择问题照片</div>
+    </div>
+    <div class="form-row" style="margin-bottom:10px">
+      <label>问题项</label>
+      <input type="text" class="item-input" placeholder="如:马桶污渍 / 床单破损 / 地漏异味">
+    </div>
+    <div class="form-row" style="margin-bottom:0">
+      <label>扣分</label>
+      <input type="number" class="deduct-input" min="0" step="0.5" value="1" placeholder="扣分">
+    </div>`;
+  document.getElementById('entries').appendChild(div);
+}
+function renumber() {
+  document.querySelectorAll('.entry').forEach((e, i) => e.querySelector('.entry-no').textContent = `问题 ${i + 1}`);
+}
+function previewPhoto(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const picker = input.closest('.photo-picker');
+  let img = picker.querySelector('img');
+  if (!img) { img = document.createElement('img'); picker.appendChild(img); }
+  img.src = URL.createObjectURL(file);
+  picker.querySelector('.placeholder').style.display = 'none';
+}
+
+async function submitBatch() {
+  const roomId = document.getElementById('roomSelect').value;
+  if (!roomId) return toast('请先选择房间', 'error');
+  const entries = [...document.querySelectorAll('.entry')];
+  if (!entries.length) return toast('请至少添加一条问题', 'error');
+  const fd = new FormData();
+  const items = [];
+  for (const e of entries) {
+    const file = e.querySelector('input[type=file]').files[0];
+    const item = e.querySelector('.item-input').value.trim();
+    const deduction = e.querySelector('.deduct-input').value;
+    if (!file) return toast('每条问题都需要照片', 'error');
+    if (!item) return toast('请填写问题项', 'error');
+    fd.append('photos', file);
+    items.push({ item, deduction: Number(deduction) || 0 });
+  }
+  fd.append('room_id', roomId);
+  fd.append('items', JSON.stringify(items));
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true; btn.textContent = `正在上传 ${items.length} 条问题...`;
+  try {
+    const r = await API.upload('/api/issues/batch', fd);
+    toast(`✅ ${r.room} 房:成功上报 ${r.count} 条问题`, 'success');
+    document.getElementById('entries').innerHTML = '';
+    addEntry();
+    loadRooms(); loadMine();
+  } catch (e) { toast(e.message, 'error'); }
+  btn.disabled = false; btn.textContent = '提交上传';
+}
+
+async function loadMine() {
+  const q = mineStatus ? `&status=${mineStatus}` : '';
+  const data = await API.get(`/api/issues?mine=1${q}`);
+  const box = document.getElementById('myIssues');
+  if (!data.issues.length) { box.innerHTML = '<div class="empty-state"><div class="big">🧹</div>暂无上报记录</div>'; return; }
+  box.innerHTML = data.issues.map(i => `
+    <div class="card" style="padding:14px">
+      <div class="flex-between">
+        <div class="issue-meta">
+          <b>${esc(i.room_number)}</b><span class="item-name">${esc(i.item)}</span>
+          <span class="deduct">-${i.deduction}分</span>
+        </div>
+        ${statusBadge(i.status)}
+      </div>
+      <div class="pair">
+        <figure><img src="/${i.photo}" data-zoom loading="lazy"><figcaption>问题 · ${fmtTime(i.created_at)}</figcaption></figure>
+        ${i.status === 'rectified'
+          ? `<figure><img src="/${i.rect_photo}" data-zoom loading="lazy"><figcaption>整改 · ${fmtTime(i.rect_at)}</figcaption></figure>`
+          : `<figure><div class="empty">⏳<span>待整改</span></div><figcaption>整改图</figcaption></figure>`}
+      </div>
+    </div>`).join('');
+}
+
+document.getElementById('mineFilter').addEventListener('click', e => {
+  if (e.target.dataset.s === undefined) return;
+  document.querySelectorAll('#mineFilter .chip').forEach(c => c.classList.remove('active'));
+  e.target.classList.add('active');
+  mineStatus = e.target.dataset.s;
+  loadMine();
+});
+
+addEntry();
+loadRooms();
+loadMine();
+</script>
+</body>
+</html>

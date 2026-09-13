@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>质检看板 - 酒店客房质检整改系统</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="stats-grid" id="stats"></div>
+
+  <div class="card">
+    <h2><span class="icon">🏢</span>楼层完成率</h2>
+    <div id="floors"></div>
+  </div>
+
+  <div class="flex-between mb16">
+    <div class="section-title" style="margin:0">🚪 房间图片对(问题 ↔ 整改)</div>
+    <button class="btn btn-ghost btn-sm" onclick="loadAll()">🔄 刷新</button>
+  </div>
+  <div class="filter-bar" id="floorFilter"></div>
+  <div class="filter-bar" id="statusFilter">
+    <button class="chip active" data-s="">全部状态</button>
+    <button class="chip" data-s="pending">有待整改</button>
+    <button class="chip" data-s="done">已全部完成</button>
+  </div>
+  <div class="room-grid" id="roomGrid"></div>
+</div>
+<script src="/js/common.js"></script>
+<script>
+const user = guard('manager', 'admin');
+renderNav('/manager.html');
+initLightbox();
+let floor = '', statusFilter = '';
+let roomStats = [], issues = [];
+
+async function loadAll() {
+  const [ov, fl, rs, is] = await Promise.all([
+    API.get('/api/stats/overview'),
+    API.get('/api/stats/floors'),
+    API.get('/api/stats/rooms'),
+    API.get('/api/issues'),
+  ]);
+  roomStats = rs.rooms; issues = is.issues;
+  renderStats(ov); renderFloors(fl.floors); renderFloorFilter(fl.floors); renderRooms();
+}
+
+function renderStats(s) {
+  document.getElementById('stats').innerHTML = `
+    <div class="stat-card hl"><div class="label">问题整改率</div><div class="value">${s.completion_rate}%</div><div class="sub">房间完成率 ${s.room_completion_rate}%</div></div>
+    <div class="stat-card"><div class="label">客房总数</div><div class="value">${s.total_rooms}</div><div class="sub">有问题 ${s.rooms_with_issues} 间</div></div>
+    <div class="stat-card"><div class="label">问题总数</div><div class="value">${s.total_issues}</div><div class="sub">今日新增 ${s.today_issues}</div></div>
+    <div class="stat-card"><div class="label">已整改</div><div class="value" style="color:var(--success)">${s.rectified}</div><div class="sub">待整改 ${s.pending}</div></div>
+    <div class="stat-card"><div class="label">累计扣分</div><div class="value" style="color:var(--danger)">${s.deduction_total}</div><div class="sub">待整改扣分 ${s.deduction_pending}</div></div>`;
+}
+
+function renderFloors(floors) {
+  if (!floors.length) { document.getElementById('floors').innerHTML = '<div class="empty-state">暂无数据</div>'; return; }
+  document.getElementById('floors').innerHTML = floors.map(f => `
+    <div class="flex mb8" style="gap:12px">
+      <div style="width:44px;font-weight:700">${esc(f.floor)}</div>
+      <div class="progress" style="flex:1"><div style="width:${f.rate}%"></div></div>
+      <div class="progress-text" style="width:150px;text-align:right">${f.rectified}/${f.total} 项 · ${f.rate}% · 扣${f.deduction_total}分</div>
+    </div>`).join('');
+}
+
+function renderFloorFilter(floors) {
+  document.getElementById('floorFilter').innerHTML =
+    `<button class="chip ${floor === '' ? 'active' : ''}" data-f="">全部楼层</button>` +
+    floors.map(f => `<button class="chip ${floor === f.floor ? 'active' : ''}" data-f="${esc(f.floor)}">${esc(f.floor)}</button>`).join('');
+}
+
+function renderRooms() {
+  let list = roomStats.filter(r => !floor || r.floor === floor);
+  if (statusFilter === 'pending') list = list.filter(r => r.pending > 0);
+  if (statusFilter === 'done') list = list.filter(r => r.total > 0 && r.pending === 0);
+  const grid = document.getElementById('roomGrid');
+  if (!list.length) { grid.innerHTML = '<div class="card" style="grid-column:1/-1"><div class="empty-state"><div class="big">🛏️</div>没有符合条件的房间</div></div>'; return; }
+  grid.innerHTML = list.map(r => {
+    const roomIssues = issues.filter(i => i.room_id === r.id);
+    const rate = r.rate === null ? null : r.rate;
+    return `
+    <div class="room-card">
+      <div class="room-head">
+        <span class="room-no">${esc(r.room_number)}</span>
+        ${rate === null ? '<span class="badge badge-active">无问题</span>'
+          : r.pending === 0 ? '<span class="badge badge-rectified">✓ 全部完成</span>'
+          : `<span class="badge badge-pending">待整改 ${r.pending}</span>`}
+      </div>
+      ${rate !== null ? `
+      <div class="flex" style="gap:10px">
+        <div class="progress" style="flex:1"><div style="width:${rate}%"></div></div>
+        <span class="progress-text">${r.rectified}/${r.total} · ${rate}%</span>
+      </div>
+      <div class="text-muted mt8">累计扣 ${r.deduction_total} 分${r.deduction_pending ? ` · 待整改扣 ${r.deduction_pending} 分` : ''}</div>` : ''}
+      ${roomIssues.map(i => `
+        <div class="issue-block">
+          <div class="issue-meta">
+            <span class="item-name">${esc(i.item)}</span>
+            <span class="deduct">-${i.deduction}分</span>
+            ${statusBadge(i.status)}
+            <time>${esc(i.inspector_name || '')} ${fmtTime(i.created_at)}</time>
+          </div>
+          <div class="pair">
+            <figure><img src="/${i.photo}" data-zoom loading="lazy"><figcaption>问题图</figcaption></figure>
+            ${i.status === 'rectified'
+              ? `<figure><img src="/${i.rect_photo}" data-zoom loading="lazy"><figcaption>整改图 · ${fmtTime(i.rect_at)}</figcaption></figure>`
+              : `<figure><div class="empty">⏳<span>待整改</span></div><figcaption>整改图</figcaption></figure>`}
+          </div>
+        </div>`).join('')}
+    </div>`;
+  }).join('');
+}
+
+document.getElementById('floorFilter').addEventListener('click', e => {
+  if (e.target.dataset.f === undefined) return;
+  floor = e.target.dataset.f;
+  document.querySelectorAll('#floorFilter .chip').forEach(c => c.classList.toggle('active', c.dataset.f === floor));
+  renderRooms();
+});
+document.getElementById('statusFilter').addEventListener('click', e => {
+  if (e.target.dataset.s === undefined) return;
+  statusFilter = e.target.dataset.s;
+  document.querySelectorAll('#statusFilter .chip').forEach(c => c.classList.toggle('active', c.dataset.s === statusFilter));
+  renderRooms();
+});
+
+loadAll();
+setInterval(loadAll, 30000); // 30秒自动刷新
+</script>
+</body>
+</html>

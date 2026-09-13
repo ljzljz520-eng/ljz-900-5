@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>整改工作台 - 酒店客房质检整改系统</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="container-narrow">
+  <div class="notice">💡 客房内扫码可免登录上传;本页可查看全部待整改问题并直接上传。</div>
+  <div class="stats-grid">
+    <div class="stat-card"><div class="label">待整改</div><div class="value" style="color:var(--warn)" id="sPending">-</div></div>
+    <div class="stat-card"><div class="label">已整改</div><div class="value" style="color:var(--success)" id="sDone">-</div></div>
+    <div class="stat-card hl"><div class="label">完成率</div><div class="value" id="sRate">-</div></div>
+  </div>
+  <div class="filter-bar" id="floorFilter"></div>
+  <div id="list"></div>
+</div>
+<script src="/js/common.js"></script>
+<script>
+const user = guard('supervisor', 'manager', 'admin');
+renderNav('/work.html');
+initLightbox();
+let floor = '';
+
+async function loadStats() {
+  const s = await API.get('/api/stats/overview');
+  document.getElementById('sPending').textContent = s.pending;
+  document.getElementById('sDone').textContent = s.rectified;
+  document.getElementById('sRate').textContent = s.completion_rate + '%';
+}
+
+async function loadFloors() {
+  const d = await API.get('/api/stats/floors');
+  document.getElementById('floorFilter').innerHTML =
+    `<button class="chip ${floor === '' ? 'active' : ''}" data-f="">全部</button>` +
+    d.floors.map(f => `<button class="chip ${floor === f.floor ? 'active' : ''}" data-f="${esc(f.floor)}">${esc(f.floor)} (待${f.pending})</button>`).join('');
+}
+
+async function loadList() {
+  const q = floor ? `&floor=${encodeURIComponent(floor)}` : '';
+  const d = await API.get(`/api/issues?status=pending${q}`);
+  const box = document.getElementById('list');
+  if (!d.issues.length) { box.innerHTML = '<div class="card"><div class="empty-state"><div class="big">🎉</div>没有待整改的问题</div></div>'; return; }
+  box.innerHTML = d.issues.map(i => `
+    <div class="card" style="padding:14px">
+      <div class="flex-between mb8">
+        <div class="issue-meta"><b>${esc(i.room_number)}</b><span class="item-name">${esc(i.item)}</span><span class="deduct">-${i.deduction}分</span></div>
+        <span class="text-muted">${fmtTime(i.created_at)}</span>
+      </div>
+      <div class="pair" style="grid-template-columns:1fr 1fr">
+        <figure><img src="/${i.photo}" data-zoom loading="lazy"><figcaption>问题照片</figcaption></figure>
+        <div class="photo-picker" style="min-height:100%;margin:0">
+          <input type="file" accept="image/*" capture="environment" id="file-${i.id}" onchange="previewPhoto(this)">
+          <div class="placeholder"><span class="cam">📷</span>整改后照片</div>
+        </div>
+      </div>
+      <button class="btn btn-success btn-block mt8" onclick="submitRect(${i.id}, this)">✓ 上传整改图</button>
+    </div>`).join('');
+}
+
+function previewPhoto(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const picker = input.closest('.photo-picker');
+  let img = picker.querySelector('img');
+  if (!img) { img = document.createElement('img'); picker.appendChild(img); }
+  img.src = URL.createObjectURL(file);
+  picker.querySelector('.placeholder').style.display = 'none';
+}
+
+async function submitRect(issueId, btn) {
+  const file = document.getElementById('file-' + issueId).files[0];
+  if (!file) return toast('请先拍摄整改照片', 'error');
+  const fd = new FormData();
+  fd.append('photo', file);
+  btn.disabled = true; btn.textContent = '上传中...';
+  try {
+    await API.upload(`/api/issues/${issueId}/rectify`, fd);
+    toast('✅ 整改完成', 'success');
+    loadStats(); loadFloors(); loadList();
+  } catch (e) {
+    toast(e.message, 'error');
+    btn.disabled = false; btn.textContent = '✓ 上传整改图';
+  }
+}
+
+document.getElementById('floorFilter').addEventListener('click', e => {
+  if (e.target.dataset.f === undefined) return;
+  floor = e.target.dataset.f;
+  loadFloors(); loadList();
+});
+
+loadStats(); loadFloors(); loadList();
+</script>
+</body>
+</html>

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>客房整改上传</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="container-narrow" id="app">
+  <div class="loading">加载中...</div>
+</div>
+<script src="/js/common.js"></script>
+<script>
+initLightbox();
+const token = new URLSearchParams(location.search).get('token') || '';
+
+async function load() {
+  const app = document.getElementById('app');
+  if (!token) { app.innerHTML = `<div class="error-box"><div class="big">🔳</div><h3>缺少二维码参数</h3><p class="text-muted">请扫描客房内的整改二维码</p></div>`; return; }
+  try {
+    const d = await API.get('/api/public/t/' + token);
+    render(d);
+  } catch (e) {
+    app.innerHTML = `<div class="error-box"><div class="big">🚫</div><h3>${esc(e.message)}</h3><p class="text-muted mt8">如有疑问请联系店长</p></div>`;
+  }
+}
+
+function render(d) {
+  const done = d.total - d.pending;
+  const pct = d.total ? Math.round(done / d.total * 100) : 100;
+  document.getElementById('app').innerHTML = `
+    <div class="card" style="background:linear-gradient(135deg,#0f766e,#115e59);color:#fff">
+      <div class="flex-between">
+        <div>
+          <div style="font-size:13px;opacity:.85">${esc(d.room.floor)} · 整改上传</div>
+          <div style="font-size:30px;font-weight:800">${esc(d.room.room_number)} <span style="font-size:14px;font-weight:400">房</span></div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:26px;font-weight:800">${done}/${d.total}</div>
+          <div style="font-size:12px;opacity:.85">已整改</div>
+        </div>
+      </div>
+      <div class="progress mt8" style="background:rgba(255,255,255,.25)"><div style="width:${pct}%"></div></div>
+    </div>
+    ${d.pending === 0 ? `<div class="card"><div class="empty-state"><div class="big">🎉</div>本房间问题已全部整改完成</div></div>` : ''}
+    ${d.issues.map(i => `
+      <div class="card" id="issue-${i.id}">
+        <div class="flex-between mb8">
+          <div class="issue-meta"><span class="item-name">${esc(i.item)}</span><span class="deduct">-${i.deduction}分</span></div>
+          ${statusBadge(i.status)}
+        </div>
+        <div class="pair">
+          <figure><img src="/${i.photo}" data-zoom loading="lazy"><figcaption>问题 · ${fmtTime(i.created_at)}</figcaption></figure>
+          ${i.status === 'rectified'
+            ? `<figure><img src="/${i.rect_photo}" data-zoom loading="lazy"><figcaption>整改 · ${fmtTime(i.rect_at)}</figcaption></figure>`
+            : `<figure><div class="empty">⏳<span>待上传整改图</span></div><figcaption>整改图</figcaption></figure>`}
+        </div>
+        ${i.status === 'pending' ? `
+        <div class="mt16">
+          <div class="photo-picker" style="min-height:90px">
+            <input type="file" accept="image/*" capture="environment" id="file-${i.id}" onchange="previewPhoto(this)">
+            <div class="placeholder"><span class="cam">📷</span>拍摄整改后照片</div>
+          </div>
+          <div class="form-row"><input type="text" id="note-${i.id}" placeholder="整改说明(选填)"></div>
+          <button class="btn btn-success btn-block" onclick="submitRect(${i.id})">✓ 上传整改图</button>
+        </div>` : ''}
+      </div>`).join('')}
+    <p class="text-muted" style="text-align:center;padding:10px 0 24px">酒店客房质检整改系统 · 扫码免登录上传</p>`;
+}
+
+function previewPhoto(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const picker = input.closest('.photo-picker');
+  let img = picker.querySelector('img');
+  if (!img) { img = document.createElement('img'); picker.appendChild(img); }
+  img.src = URL.createObjectURL(file);
+  picker.querySelector('.placeholder').style.display = 'none';
+}
+
+async function submitRect(issueId) {
+  const file = document.getElementById('file-' + issueId).files[0];
+  if (!file) return toast('请先拍摄整改照片', 'error');
+  const fd = new FormData();
+  fd.append('photo', file);
+  fd.append('issue_id', issueId);
+  fd.append('note', document.getElementById('note-' + issueId).value.trim());
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = '上传中...';
+  try {
+    await API.upload(`/api/public/t/${token}/rectify`, fd);
+    toast('✅ 整改图上传成功', 'success');
+    load();
+  } catch (e) {
+    toast(e.message, 'error');
+    btn.disabled = false; btn.textContent = '✓ 上传整改图';
+  }
+}
+load();
+</script>
+</body>
+</html>
