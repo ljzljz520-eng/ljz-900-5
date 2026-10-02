@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>客房整改上传</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .rectify-header { background: linear-gradient(135deg,#26a269,#57e389); color:#fff; padding:22px 16px; text-align:center; }
+  .rectify-header h1 { font-size:19px; } .rectify-header p { font-size:13px; opacity:.9; margin-top:4px; }
+  .done-banner { background:#d1f2df; color:#166534; border-radius:10px; padding:12px; text-align:center; font-weight:600; margin-bottom:12px; }
+  .err-wrap { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .err-card { background:#fff; border-radius:16px; padding:40px 28px; text-align:center; max-width:340px; }
+  .err-card .icon { font-size:52px; margin-bottom:12px; }
+</style>
+</head>
+<body>
+<div id="page"><div class="empty-state">加载中…</div></div>
+<div id="lightbox" class="lightbox hidden" onclick="this.classList.add('hidden')"><img id="lightbox-img" src=""></div>
+<div id="toast" class="toast hidden"></div>
+<script>
+const $ = (s, el=document) => el.querySelector(s);
+const $$ = (s, el=document) => [...el.querySelectorAll(s)];
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const token = new URLSearchParams(location.search).get('t') || '';
+let toastTimer;
+function toast(msg, ms=2400){ const t=$('#toast'); t.textContent=msg; t.classList.remove('hidden'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.add('hidden'),ms); }
+function lightbox(src){ $('#lightbox-img').src=src; $('#lightbox').classList.remove('hidden'); }
+const photoImg = (p) => `<img src="/uploads/${esc(p.filename)}" loading="lazy" onclick="lightbox('/uploads/${esc(p.filename)}')">`;
+
+let files = [];
+
+async function load() {
+  if (!token) return showError('链接无效', '缺少令牌参数');
+  try {
+    const res = await fetch('/api/rectify/' + token);
+    const data = await res.json();
+    if (!res.ok) return showError('无法打开整改页', data.error || '链接无效或已停用');
+    render(data.inspection);
+  } catch (e) { showError('网络错误', e.message); }
+}
+
+function showError(title, msg) {
+  $('#page').innerHTML = `<div class="err-wrap"><div class="err-card">
+    <div class="icon">🚫</div><h2 style="font-size:18px;margin-bottom:8px">${esc(title)}</h2>
+    <p style="color:var(--muted);font-size:14px">${esc(msg)}</p>
+    <p style="color:var(--muted);font-size:12px;margin-top:14px">如有疑问请联系店长重新生成二维码</p>
+  </div></div>`;
+}
+
+function render(i) {
+  $('#page').innerHTML = `
+  <div class="rectify-header"><h1>🛠 客房整改上传</h1><p>房间 ${esc(i.room_number)} · ${esc(i.problem_item)}</p></div>
+  <div class="container">
+    ${i.status === 'rectified' ? '<div class="done-banner">✅ 该问题已整改完成，可继续补充照片</div>' : ''}
+    <div class="card">
+      <h3>📋 问题详情</h3>
+      <div class="insp-head">
+        <span class="room-badge">${esc(i.room_number)}</span>
+        <span class="badge badge-item">${esc(i.problem_item)}</span>
+        <span class="badge badge-deduct">扣 ${i.deduction} 分</span>
+      </div>
+      ${i.description ? `<div class="insp-desc">${esc(i.description)}</div>` : ''}
+      <div class="insp-meta">质检员：${esc(i.inspector_name)} ｜ ${esc(i.created_at)}</div>
+      <h4 style="font-size:13px;color:var(--muted);margin-top:10px">问题照片（${i.problem_photos.length}）</h4>
+      ${i.problem_photos.length ? `<div class="photo-grid">${i.problem_photos.map(photoImg).join('')}</div>` : '<div class="empty-hint">无照片</div>'}
+    </div>
+
+    <div class="card">
+      <h3>📷 上传整改照片（可批量）</h3>
+      <input type="file" id="f-photos" accept="image/*" multiple capture="environment" class="hidden">
+      <div class="photo-grid" id="preview-grid"></div>
+      ${i.rectification_photos.length ? `<h4 style="font-size:13px;color:var(--muted);margin:14px 0 4px">已上传整改图（${i.rectification_photos.length}）</h4>
+      <div class="photo-grid">${i.rectification_photos.map(photoImg).join('')}</div>` : ''}
+      <button class="btn btn-success btn-block" id="submit-btn" style="margin-top:14px">提交整改（${i.status === 'rectified' ? '补充' : '完成整改'}）</button>
+    </div>
+  </div>`;
+
+  files = [];
+  const fileInput = $('#f-photos');
+  const renderPreview = () => {
+    const grid = $('#preview-grid');
+    grid.innerHTML = '';
+    files.forEach((f, idx) => {
+      const d = document.createElement('div');
+      d.className = 'preview-item';
+      d.innerHTML = `<img src="${URL.createObjectURL(f)}"><button class="del" data-i="${idx}">×</button>`;
+      grid.appendChild(d);
+    });
+    const add = document.createElement('div');
+    add.className = 'photo-add';
+    add.innerHTML = '<span class="plus">＋</span><span>拍照/选择</span>';
+    add.onclick = () => fileInput.click();
+    grid.appendChild(add);
+    $$('.del', grid).forEach(b => b.onclick = () => { files.splice(+b.dataset.i, 1); renderPreview(); });
+  };
+  renderPreview();
+  fileInput.onchange = () => { files.push(...fileInput.files); fileInput.value = ''; renderPreview(); };
+
+  $('#submit-btn').onclick = async () => {
+    if (!files.length) return toast('请先选择整改照片');
+    const fd = new FormData();
+    files.forEach(f => fd.append('photos', f));
+    const btn = $('#submit-btn');
+    btn.disabled = true; btn.textContent = '上传中…';
+    try {
+      const res = await fetch('/api/rectify/' + token, { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '上传失败');
+      toast(`✅ 整改完成，已上传 ${data.added} 张照片`);
+      load();
+    } catch (e) { toast(e.message); btn.disabled = false; btn.textContent = '提交整改'; }
+  };
+}
+load();
+</script>
+</body>
+</html>
