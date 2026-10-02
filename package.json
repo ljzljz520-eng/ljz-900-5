@@ -1,0 +1,17 @@
+{
+  "name": "hotel-qc-rectify",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "酒店客房质检整改系统：问题照片上报、二维码整改、完成率统计",
+  "dependencies": {
+    "express": "^5.2.1",
+    "multer": "^2.4.0",
+    "qrcode": "^1.5.4"
+  }
+}

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 - 酒店客房质检整改系统</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-box">
+    <div class="logo-big">🏨</div>
+    <h1>酒店客房质检整改系统</h1>
+    <p class="subtitle">客房问题上报 · 扫码整改 · 汇总核查</p>
+    <div class="login-error" id="err"></div>
+    <form id="loginForm">
+      <label class="fld">
+        <span class="lab">账号</span>
+        <input type="text" id="name" placeholder="请输入账号" autocomplete="username" required>
+      </label>
+      <label class="fld">
+        <span class="lab">密码</span>
+        <input type="password" id="password" placeholder="请输入密码" autocomplete="current-password" required>
+      </label>
+      <button class="btn btn-primary" type="submit" style="width:100%; justify-content:center; padding:11px" id="loginBtn">
+        登 录
+      </button>
+    </form>
+    <div class="demo">
+      <div>演示账号（首次启动自动创建）：</div>
+      <div>店长 <code>manager / manager123</code></div>
+      <div>质检员 <code>inspector / inspector123</code></div>
+      <div>客房主管 <code>supervisor / super123</code></div>
+    </div>
+  </div>
+</div>
+<script src="/js/api.js"></script>
+<script src="/js/login.js"></script>
+</body>
+</html>

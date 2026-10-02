@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>酒店客房质检整改系统</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo">🏨</span>客房质检整改</div>
+  <nav id="nav"></nav>
+  <div class="userbox">
+    <span class="uname" id="uname"></span>
+    <span class="role-tag" id="urole"></span>
+    <button class="btn-logout" id="logoutBtn">退出</button>
+  </div>
+</header>
+
+<main class="container" id="view"></main>
+
+<div class="modal-mask" id="modalMask">
+  <div class="modal" id="modalBox">
+    <div class="modal-head">
+      <span id="modalTitle"></span>
+      <span class="spacer"></span>
+      <button class="modal-close" id="modalClose">×</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-foot" id="modalFoot"></div>
+  </div>
+</div>
+
+<div id="toast-wrap"></div>
+
+<script src="/js/api.js"></script>
+<script src="/js/util.js"></script>
+<script src="/js/pages/dashboard.js"></script>
+<script src="/js/pages/report.js"></script>
+<script src="/js/pages/issues.js"></script>
+<script src="/js/pages/staff.js"></script>
+<script src="/js/pages/sessions.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>
